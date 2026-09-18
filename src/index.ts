@@ -1,5 +1,6 @@
 import express from "express";
 import { createClient } from "redis";
+import { authenticate } from "./auth";
 
 // One long-lived Redis connection, reused for every request (not per-request).
 // URL comes from env: Docker sets redis://redis:6379; defaults to localhost otherwise.
@@ -11,9 +12,15 @@ redis.on("error", (err) => console.error("Redis client error:", err));
 
 const app = express();
 
-// Skeleton health check — proves the server is up. No rate limiting yet.
+// Public health check — no API key required.
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
+});
+
+// Temporary gated route to exercise auth: echoes the resolved tenant.
+// Placeholder until the rate-limiter + backend forwarding land.
+app.get("/api", authenticate, (req, res) => {
+  res.status(200).json({ tenant: req.tenant });
 });
 
 const port = Number(process.env.PORT) || 3000;
