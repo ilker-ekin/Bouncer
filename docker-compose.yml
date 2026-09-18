@@ -21,7 +21,3 @@ services:
     depends_on:
       - redis
       - backend
-    # Mount source for dev so code changes don't require a rebuild.
-    volumes:
-      - ./src:/app/src
-    command: npm run dev
