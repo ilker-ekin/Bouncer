@@ -4,6 +4,12 @@ services:
     ports:
       - "6379:6379"
 
+  # Dev stub backend: echoes the request it receives (proves forwarding worked).
+  backend:
+    image: traefik/whoami
+    ports:
+      - "8080:80"
+
   bouncer:
     build: .
     ports:
@@ -11,8 +17,10 @@ services:
     environment:
       - PORT=3000
       - REDIS_URL=redis://redis:6379
+      - BACKEND_URL=http://backend:80
     depends_on:
       - redis
+      - backend
     # Mount source for dev so code changes don't require a rebuild.
     volumes:
       - ./src:/app/src
