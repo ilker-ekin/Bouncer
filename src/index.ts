@@ -1,6 +1,7 @@
 import express from "express";
 import { createClient } from "redis";
 import { authenticate } from "./auth";
+import { rateLimit } from "./ratelimit";
 
 // One long-lived Redis connection, reused for every request (not per-request).
 // URL comes from env: Docker sets redis://redis:6379; defaults to localhost otherwise.
@@ -19,7 +20,7 @@ app.get("/health", (_req, res) => {
 
 // Temporary gated route to exercise auth: echoes the resolved tenant.
 // Placeholder until the rate-limiter + backend forwarding land.
-app.get("/api", authenticate, (req, res) => {
+app.get("/api", authenticate, rateLimit(redis), (req, res) => {
   res.status(200).json({ tenant: req.tenant });
 });
 
