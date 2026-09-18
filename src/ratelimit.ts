@@ -49,10 +49,18 @@ export function rateLimit(redis: RedisClientType) {
 
     const { rate, capacity } = TIER_LIMITS[tenant.tier];
 
-    const result = (await redis.eval(TOKEN_BUCKET_SCRIPT, {
-      keys: [`ratelimit:${tenant.tenantId}`],
-      arguments: [String(rate), String(capacity), String(Date.now())],
-    })) as [number, string];
+    let result: [number, string];
+    try {
+      result = (await redis.eval(TOKEN_BUCKET_SCRIPT, {
+        keys: [`ratelimit:${tenant.tenantId}`],
+        arguments: [String(rate), String(capacity), String(Date.now())],
+      })) as [number, string];
+    } catch (err) {
+      // Fail open: if Redis is unreachable, allow the request rather than taking
+      // the backend down with the limiter. Availability over strict enforcement.
+      console.error("Rate limiter Redis error (failing open):", err);
+      return next();
+    }
 
     const [allowed, tokensLeftStr] = result;
     const remaining = Math.floor(Number(tokensLeftStr));

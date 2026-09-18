@@ -6,7 +6,13 @@ import { forward } from "./forward";
 
 // One long-lived Redis connection, reused for every request (not per-request).
 // URL comes from env: Docker sets redis://redis:6379; defaults to localhost otherwise.
-const redis = createClient({ url: process.env.REDIS_URL });
+// disableOfflineQueue: reject commands immediately when disconnected instead of
+// queuing them, so the rate limiter fails open fast (see ratelimit.ts) rather
+// than hanging ~5s waiting for a reconnect.
+const redis = createClient({
+  url: process.env.REDIS_URL,
+  disableOfflineQueue: true,
+});
 
 // node-redis emits 'error' on connection trouble (drops, reconnect failures).
 // If no listener is attached, it surfaces as an uncaught exception — so always attach one.
