@@ -4,6 +4,17 @@ services:
     ports:
       - "6379:6379"
 
+  # RabbitMQ for v2 (tiered prioritization). -management adds a UI at :15672.
+  # guest is localhost-only, so define dev creds usable across containers.
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"   # AMQP protocol
+      - "15672:15672" # management UI
+    environment:
+      - RABBITMQ_DEFAULT_USER=bouncer
+      - RABBITMQ_DEFAULT_PASS=bouncer
+
   # Dev stub backend: echoes the request it receives (proves forwarding worked).
   backend:
     image: traefik/whoami
@@ -18,6 +29,8 @@ services:
       - PORT=3000
       - REDIS_URL=redis://redis:6379
       - BACKEND_URL=http://backend:80
+      - RABBITMQ_URL=amqp://bouncer:bouncer@rabbitmq:5672
     depends_on:
       - redis
       - backend
+      - rabbitmq

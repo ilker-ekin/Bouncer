@@ -1,5 +1,6 @@
 import express from "express";
 import { createClient } from "redis";
+import { connect } from "amqplib";
 import { authenticate } from "./auth";
 import { rateLimit } from "./ratelimit";
 import { forward } from "./forward";
@@ -36,6 +37,16 @@ const port = Number(process.env.PORT) || 3000;
 await redis.connect();
 const pong = await redis.ping();
 console.log(`Redis connected: ${pong}`);
+
+// Connect to RabbitMQ (v2): one long-lived TCP connection, then one channel
+// (a virtual connection multiplexed over it). Opening a channel proves the link.
+// No exchange/queues/publishing yet — that's the next step.
+const rabbitUrl = process.env.RABBITMQ_URL ?? "amqp://bouncer:bouncer@localhost:5672";
+const rabbit = await connect(rabbitUrl);
+rabbit.on("error", (err) => console.error("RabbitMQ connection error:", err));
+rabbit.on("close", () => console.warn("RabbitMQ connection closed"));
+await rabbit.createChannel();
+console.log("RabbitMQ connected");
 
 app.listen(port, () => {
   console.log(`Bouncer listening on :${port}`);

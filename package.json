@@ -9,6 +9,7 @@
     "loadtest": "tsx scripts/loadtest.ts"
   },
   "dependencies": {
+    "amqplib": "^2.0.1",
     "express": "^4.19.2",
     "redis": "^6.2.1"
   },
