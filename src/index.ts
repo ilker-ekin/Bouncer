@@ -4,6 +4,7 @@ import { connect } from "amqplib";
 import { authenticate } from "./auth";
 import { rateLimit } from "./ratelimit";
 import { forward } from "./forward";
+import { declareTopology } from "./queue";
 
 // One long-lived Redis connection, reused for every request (not per-request).
 // URL comes from env: Docker sets redis://redis:6379; defaults to localhost otherwise.
@@ -45,8 +46,9 @@ const rabbitUrl = process.env.RABBITMQ_URL ?? "amqp://bouncer:bouncer@localhost:
 const rabbit = await connect(rabbitUrl);
 rabbit.on("error", (err) => console.error("RabbitMQ connection error:", err));
 rabbit.on("close", () => console.warn("RabbitMQ connection closed"));
-await rabbit.createChannel();
-console.log("RabbitMQ connected");
+const channel = await rabbit.createChannel();
+await declareTopology(channel);
+console.log("RabbitMQ connected; topology declared");
 
 app.listen(port, () => {
   console.log(`Bouncer listening on :${port}`);
