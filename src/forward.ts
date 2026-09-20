@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { enter, leave } from "./overload";
 
 // Where allowed requests get proxied. Defaults to the local whoami (host port);
 // Docker Compose overrides this with the backend service address.
@@ -74,22 +75,30 @@ export async function forward(req: Request, res: Response) {
 
   try {
     const body = await collectBody(req);
-    // Cast works around a @types/node vs fetch generics mismatch on Uint8Array;
-    // fetch accepts a Uint8Array body fine at runtime.
-    const backendRes = await fetch(url, {
-      method: req.method,
-      headers,
-      body: body as RequestInit["body"],
-      // Don't follow backend redirects server-side (SSRF risk) — relay the 3xx.
-      redirect: "manual",
-      signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
-    });
 
-    res.status(backendRes.status);
-    backendRes.headers.forEach((value, key) => {
-      if (!SKIP_RESPONSE_HEADERS.has(key.toLowerCase())) res.setHeader(key, value);
-    });
-    res.send(Buffer.from(await backendRes.arrayBuffer()));
+    // Count this backend call as in-flight for overload detection. leave() in
+    // finally so the count is released whether the call succeeds or fails.
+    enter();
+    try {
+      // Cast works around a @types/node vs fetch generics mismatch on Uint8Array;
+      // fetch accepts a Uint8Array body fine at runtime.
+      const backendRes = await fetch(url, {
+        method: req.method,
+        headers,
+        body: body as RequestInit["body"],
+        // Don't follow backend redirects server-side (SSRF risk) — relay the 3xx.
+        redirect: "manual",
+        signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
+      });
+
+      res.status(backendRes.status);
+      backendRes.headers.forEach((value, key) => {
+        if (!SKIP_RESPONSE_HEADERS.has(key.toLowerCase())) res.setHeader(key, value);
+      });
+      res.send(Buffer.from(await backendRes.arrayBuffer()));
+    } finally {
+      leave();
+    }
   } catch (err) {
     if (err instanceof PayloadTooLargeError) {
       return res.status(413).json({ error: "payload_too_large" });
