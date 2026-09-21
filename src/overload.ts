@@ -5,8 +5,11 @@
 // This is a simple in-process counter — it reflects one Bouncer instance, which
 // is all v1/v2 target (single instance).
 
-// Concurrency the backend can handle before we treat it as overloaded. Tunable.
-export const MAX_IN_FLIGHT = 50;
+// Concurrency the backend can handle before we treat it as overloaded.
+// Configurable via env (default 50); parsed so an explicit 0 is honored
+// (0 forces every request through the queue — handy for testing/demos).
+const parsedCap = Number(process.env.MAX_IN_FLIGHT);
+export const MAX_IN_FLIGHT = Number.isFinite(parsedCap) ? parsedCap : 50;
 
 let inFlightCount = 0;
 

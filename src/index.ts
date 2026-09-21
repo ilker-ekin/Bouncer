@@ -3,8 +3,8 @@ import { createClient } from "redis";
 import { connect } from "amqplib";
 import { authenticate } from "./auth";
 import { rateLimit } from "./ratelimit";
-import { forward } from "./forward";
 import { declareTopology } from "./queue";
+import { createDispatch } from "./dispatch";
 
 // One long-lived Redis connection, reused for every request (not per-request).
 // URL comes from env: Docker sets redis://redis:6379; defaults to localhost otherwise.
@@ -27,10 +27,6 @@ app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
-// Everything else is gated: authenticate -> rate limit -> forward to backend.
-// Acts as a real gateway (all paths/methods except /health).
-app.all("*", authenticate, rateLimit(redis), forward);
-
 const port = Number(process.env.PORT) || 3000;
 
 // Connect to Redis and prove the link with PING before we start accepting HTTP.
@@ -40,8 +36,7 @@ const pong = await redis.ping();
 console.log(`Redis connected: ${pong}`);
 
 // Connect to RabbitMQ (v2): one long-lived TCP connection, then one channel
-// (a virtual connection multiplexed over it). Opening a channel proves the link.
-// No exchange/queues/publishing yet — that's the next step.
+// (a virtual connection multiplexed over it), and declare the tier topology.
 const rabbitUrl = process.env.RABBITMQ_URL ?? "amqp://bouncer:bouncer@localhost:5672";
 const rabbit = await connect(rabbitUrl);
 rabbit.on("error", (err) => console.error("RabbitMQ connection error:", err));
@@ -49,6 +44,11 @@ rabbit.on("close", () => console.warn("RabbitMQ connection closed"));
 const channel = await rabbit.createChannel();
 await declareTopology(channel);
 console.log("RabbitMQ connected; topology declared");
+
+// Everything except /health is gated: authenticate -> rate limit -> dispatch.
+// dispatch forwards directly under normal load, or enqueues by tier under overload.
+// Registered after the channel exists, since dispatch needs it to publish.
+app.all("*", authenticate, rateLimit(redis), createDispatch(channel));
 
 app.listen(port, () => {
   console.log(`Bouncer listening on :${port}`);
