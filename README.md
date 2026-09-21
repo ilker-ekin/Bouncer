@@ -51,7 +51,8 @@ Demo keys: `key_t1_demo`, `key_t2_demo`, `key_t3_demo`.
 
 ### Option A — Docker Compose (integrated, prod-like)
 
-Runs Bouncer + Redis + RabbitMQ + a stub backend (`traefik/whoami`) together:
+Runs Bouncer + Redis + RabbitMQ + a stub backend (`mccutchen/go-httpbin`)
+together, with `MAX_IN_FLIGHT=10` so the overload/priority behavior is visible:
 
 ```bash
 docker compose up --build
@@ -64,7 +65,8 @@ Then:
 
 ```bash
 curl localhost:3000/health
-curl -H "Authorization: Bearer key_t3_demo" localhost:3000/anything
+curl -H "Authorization: Bearer key_t3_demo" localhost:3000/anything   # echoes the request
+curl -H "Authorization: Bearer key_t3_demo" localhost:3000/delay/1     # slow (drives the demo)
 ```
 
 ### Option B — host dev (hot reload)
@@ -72,13 +74,13 @@ curl -H "Authorization: Bearer key_t3_demo" localhost:3000/anything
 Run Redis, RabbitMQ, and a backend in containers, and Bouncer on the host with reload:
 
 ```bash
-docker run -d --name bouncer-redis  -p 6379:6379 redis:7-alpine
-docker run -d --name bouncer-whoami -p 8080:80  traefik/whoami
-docker run -d --name bouncer-rabbit -p 5672:5672 -p 15672:15672 \
+docker run -d --name bouncer-redis   -p 6379:6379  redis:7-alpine
+docker run -d --name bouncer-backend -p 8080:8080  mccutchen/go-httpbin
+docker run -d --name bouncer-rabbit  -p 5672:5672 -p 15672:15672 \
   -e RABBITMQ_DEFAULT_USER=bouncer -e RABBITMQ_DEFAULT_PASS=bouncer \
   rabbitmq:3-management
 npm install
-npm run dev
+MAX_IN_FLIGHT=10 npm run dev
 ```
 
 Bouncer defaults to `redis://localhost:6379`, `http://localhost:8080`, and
@@ -110,18 +112,43 @@ bucket refills during the burst, so observed allowance ≈ `capacity + rate ×
 burst_duration`. It scales with rate (T3 refills fastest → most overshoot),
 which confirms the lazy refill is live.
 
+## Overload / priority demo (v2)
+
+Proves that under backend overload, the **T3 backlog is served before T1**. It
+saturates the backend with filler requests (so the measured burst all queues),
+then fires an equal T1 + T3 burst at the slow `/delay/1` endpoint and compares
+completion times:
+
+```bash
+npm run demo
+```
+
+Example output:
+
+```
+tier   ok/total    min    avg    max   (ms to complete)
+T3   15/15       3056   3410   4114
+T1   15/15       4116   4823   5179
+✓ Priority holds: the T3 backlog drained before T1 (avg 3410ms vs 4823ms).
+```
+
+Here every T3 finished before any T1 (`T3 max 4114 < T1 min 4116`) — the whole T3
+backlog drained first. Requires the low-cap slow-backend setup above
+(`docker compose up`, or host dev with `MAX_IN_FLIGHT=10` + go-httpbin).
+
 ## Configuration
 
-| Variable       | Default                             | Purpose                        |
-|----------------|-------------------------------------|--------------------------------|
-| `PORT`         | `3000`                              | Bouncer listen port            |
-| `REDIS_URL`    | `redis://localhost:6379`            | Redis address                  |
-| `BACKEND_URL`  | `http://localhost:8080`             | Backend to proxy allowed traffic to |
-| `RABBITMQ_URL` | `amqp://bouncer:bouncer@localhost:5672` | RabbitMQ address           |
+| Variable        | Default                             | Purpose                        |
+|-----------------|-------------------------------------|--------------------------------|
+| `PORT`          | `3000`                              | Bouncer listen port            |
+| `REDIS_URL`     | `redis://localhost:6379`            | Redis address                  |
+| `BACKEND_URL`   | `http://localhost:8080`             | Backend to proxy allowed traffic to |
+| `RABBITMQ_URL`  | `amqp://bouncer:bouncer@localhost:5672` | RabbitMQ address           |
+| `MAX_IN_FLIGHT` | `50`                                | Concurrent backend requests before overload (queue kicks in) |
 
-Compose sets these to the service network addresses. The RabbitMQ credentials
-are throwaway **dev** values — production credentials would come from
-env/secrets, never committed.
+Compose sets these to the service network addresses (and `MAX_IN_FLIGHT=10`). The
+RabbitMQ credentials are throwaway **dev** values — production credentials would
+come from env/secrets, never committed.
 
 ## Design notes (the "why")
 
@@ -193,8 +220,8 @@ proxying, TLS termination.
 ## Roadmap
 
 - **v1 — Redis rate limiting** ✅
-- **v2 — RabbitMQ tiered prioritization** 🚧 (connection, topology, overload
-  detection done; publish/consume + priority serving next)
+- **v2 — RabbitMQ tiered prioritization** ✅ (overload detection, publish, and a
+  priority consumer that drains T3→T2→T1; proven with `npm run demo`)
 - **CI** — automated Redis + RabbitMQ integration tests
 - **CD** — deploy to AWS
 - **v3 (candidate)** — `/metrics` endpoint + Prometheus/Grafana observability
@@ -207,9 +234,11 @@ src/
   config.ts     tiers, limits, API key -> tenant table
   auth.ts       API-key authentication middleware
   ratelimit.ts  token-bucket Lua script + rate-limit middleware
-  forward.ts    proxy allowed requests to the backend (with overload counting)
   overload.ts   in-flight counter + MAX_IN_FLIGHT cap (overload detection)
-  queue.ts      RabbitMQ topology: direct exchange + per-tier queues (v2)
+  queue.ts      RabbitMQ topology: direct exchange + per-tier queues
+  dispatch.ts   fork: forward directly, or enqueue + priority consumer (v2)
+  forward.ts    proxy a request to the backend
 scripts/
-  loadtest.ts   concurrent per-tier burst test
+  loadtest.ts       concurrent per-tier burst (rate-limit proof)
+  demo-overload.ts  overload/priority demo (T3 served before T1)
 ```
