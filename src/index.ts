@@ -4,7 +4,7 @@ import { connect } from "amqplib";
 import { authenticate } from "./auth";
 import { rateLimit } from "./ratelimit";
 import { declareTopology } from "./queue";
-import { createDispatch } from "./dispatch";
+import { createDispatch, startConsumer } from "./dispatch";
 
 // One long-lived Redis connection, reused for every request (not per-request).
 // URL comes from env: Docker sets redis://redis:6379; defaults to localhost otherwise.
@@ -44,6 +44,10 @@ rabbit.on("close", () => console.warn("RabbitMQ connection closed"));
 const channel = await rabbit.createChannel();
 await declareTopology(channel);
 console.log("RabbitMQ connected; topology declared");
+
+// Start the priority worker: drains tier queues (T3->T2->T1), paced by the
+// in-flight cap, and answers each held request by forwarding it.
+startConsumer(channel);
 
 // Everything except /health is gated: authenticate -> rate limit -> dispatch.
 // dispatch forwards directly under normal load, or enqueues by tier under overload.
