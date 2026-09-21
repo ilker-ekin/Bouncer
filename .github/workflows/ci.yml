@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  integration:
+    name: Integration tests (Redis + RabbitMQ)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start the stack (Bouncer + Redis + RabbitMQ + backend)
+        run: docker compose up -d --build
+
+      - name: Wait for Bouncer to be ready
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3000/health >/dev/null; then
+              echo "Bouncer ready after ~$((i*2))s"; exit 0
+            fi
+            sleep 2
+          done
+          echo "Bouncer did not become ready in time"; exit 1
+
+      - name: Run integration tests
+        run: npm test
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
