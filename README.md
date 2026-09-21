@@ -136,6 +136,28 @@ Here every T3 finished before any T1 (`T3 max 4114 < T1 min 4116`) — the whole
 backlog drained first. Requires the low-cap slow-backend setup above
 (`docker compose up`, or host dev with `MAX_IN_FLIGHT=10` + go-httpbin).
 
+## Tests & CI
+
+Integration tests (`node:test`, zero-dependency) run against the live stack —
+health, auth, Redis rate limiting, and RabbitMQ overload priority:
+
+```bash
+docker compose up -d --build   # start the stack
+npm test                       # run the suite against it
+```
+
+Or run the whole pipeline (boot → wait for /health → test → tear down) in one
+command, mirroring CI exactly:
+
+```bash
+npm run ci:local
+```
+
+**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs that same
+pipeline on GitHub Actions — on every pull request targeting `main` (from any
+branch), on pushes to `main`, and on manual dispatch. To block merges until it's
+green, enable branch protection on `main` requiring the `CI` check.
+
 ## Configuration
 
 | Variable        | Default                             | Purpose                        |
@@ -222,7 +244,7 @@ proxying, TLS termination.
 - **v1 — Redis rate limiting** ✅
 - **v2 — RabbitMQ tiered prioritization** ✅ (overload detection, publish, and a
   priority consumer that drains T3→T2→T1; proven with `npm run demo`)
-- **CI** — automated Redis + RabbitMQ integration tests
+- **CI** — GitHub Actions running the Redis + RabbitMQ integration tests ✅
 - **CD** — deploy to AWS
 - **v3 (candidate)** — `/metrics` endpoint + Prometheus/Grafana observability
 
@@ -241,4 +263,12 @@ src/
 scripts/
   loadtest.ts       concurrent per-tier burst (rate-limit proof)
   demo-overload.ts  overload/priority demo (T3 served before T1)
+  ci-local.sh       run the CI pipeline locally (boot -> test -> teardown)
+tests/
+  integration.test.ts  health + auth
+  ratelimit.test.ts    Redis rate limiting (429 + headers)
+  overload.test.ts     RabbitMQ overload priority (T3 before T1)
+  helpers.ts           shared test helpers
+.github/workflows/
+  ci.yml            GitHub Actions: boot stack, run tests, tear down
 ```

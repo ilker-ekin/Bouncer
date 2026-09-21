@@ -8,7 +8,8 @@
     "start": "tsx src/index.ts",
     "loadtest": "tsx scripts/loadtest.ts",
     "demo": "tsx scripts/demo-overload.ts",
-    "test": "tsx --test --test-concurrency=1 tests/*.test.ts"
+    "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
+    "ci:local": "bash scripts/ci-local.sh"
   },
   "dependencies": {
     "amqplib": "^2.0.1",
