@@ -1,0 +1,6 @@
+# Bake provisioning (datasource + dashboard provider) and the dashboard JSON into
+# the image — this environment can't bind-mount the repo path, and baking keeps
+# the whole monitoring stack self-contained.
+FROM grafana/grafana
+COPY provisioning /etc/grafana/provisioning
+COPY dashboards /var/lib/grafana/dashboards
