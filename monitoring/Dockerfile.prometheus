@@ -1,0 +1,4 @@
+# Bake the scrape config into the image (this environment can't bind-mount the
+# repo path, and baking keeps the setup self-contained + CI-friendly).
+FROM prom/prometheus
+COPY prometheus.yml /etc/prometheus/prometheus.yml
