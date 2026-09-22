@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { API_KEYS, type Tenant } from "./config";
+import { recordRequest } from "./metrics";
 
 // Make the resolved tenant available to later handlers in a type-safe way.
 declare global {
@@ -19,11 +20,13 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
     : undefined;
 
   if (!key) {
+    recordRequest("none", "unauthorized");
     return res.status(401).json({ error: "missing_api_key" });
   }
 
   const tenant = API_KEYS[key];
   if (!tenant) {
+    recordRequest("none", "unauthorized");
     return res.status(401).json({ error: "invalid_api_key" });
   }
 

@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import type { RedisClientType } from "redis";
 import { TIER_LIMITS } from "./config";
+import { recordRequest } from "./metrics";
 
 // Token-bucket check, run atomically inside Redis so concurrent requests can't
 // race past the limit (read-compute-write is one indivisible unit).
@@ -73,6 +74,7 @@ export function rateLimit(redis: RedisClientType) {
     }
 
     // Over the limit: tell the client how long until one token is available.
+    recordRequest(tenant.tier, "rate_limited");
     res.setHeader("Retry-After", Math.ceil(1 / rate));
     return res.status(429).json({ error: "rate_limited" });
   };

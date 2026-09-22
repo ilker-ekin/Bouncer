@@ -5,6 +5,7 @@ import { authenticate } from "./auth";
 import { rateLimit } from "./ratelimit";
 import { declareTopology } from "./queue";
 import { createDispatch, startConsumer } from "./dispatch";
+import { registry } from "./metrics";
 
 // One long-lived Redis connection, reused for every request (not per-request).
 // URL comes from env: Docker sets redis://redis:6379; defaults to localhost otherwise.
@@ -25,6 +26,13 @@ const app = express();
 // Public health check — no API key required.
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
+});
+
+// Public metrics endpoint for Prometheus to scrape (no key). In production this
+// would be restricted to the internal network, not exposed to clients.
+app.get("/metrics", async (_req, res) => {
+  res.set("Content-Type", registry.contentType);
+  res.send(await registry.metrics());
 });
 
 const port = Number(process.env.PORT) || 3000;

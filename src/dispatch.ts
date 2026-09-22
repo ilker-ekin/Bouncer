@@ -5,6 +5,7 @@ import { forward } from "./forward";
 import { enter, isOverloaded, leave } from "./overload";
 import { EXCHANGE, QUEUES } from "./queue";
 import type { Tier } from "./config";
+import { recordRequest } from "./metrics";
 
 // Requests waiting in the priority queue, keyed by a generated message id.
 // The consumer (next step) looks up the held { req, res } by this id to forward
@@ -16,16 +17,19 @@ const pending = new Map<string, { req: Request; res: Response }>();
 // connection open until the consumer processes it.
 export function createDispatch(channel: Channel) {
   return function dispatch(req: Request, res: Response) {
+    // tenant is guaranteed set by authenticate (runs earlier in the chain).
+    const tenant = req.tenant!;
+
     if (!isOverloaded()) {
       // Count in-flight synchronously here (before the next concurrent request's
       // overload check), then forward. leave() when the backend call settles.
+      recordRequest(tenant.tier, "forwarded");
       enter();
       void forward(req, res).finally(leave);
       return;
     }
 
-    // Overloaded: enqueue. tenant is guaranteed set by authenticate.
-    const tenant = req.tenant!;
+    // Overloaded: enqueue.
     const id = randomUUID();
     pending.set(id, { req, res });
 
@@ -34,6 +38,7 @@ export function createDispatch(channel: Channel) {
 
     // Publish the id to the tenant's tier queue (routing key = tier).
     channel.publish(EXCHANGE, tenant.tier, Buffer.from(id));
+    recordRequest(tenant.tier, "queued");
   };
 }
 
