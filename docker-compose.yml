@@ -46,3 +46,28 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_healthy
+
+  # Scrapes Bouncer's /metrics; UI + query browser at http://localhost:9090
+  prometheus:
+    build:
+      context: ./monitoring
+      dockerfile: Dockerfile.prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - bouncer
+
+  # Dashboards at http://localhost:3001 (anonymous admin — dev only).
+  # Datasource + the Bouncer dashboard are provisioned from code.
+  grafana:
+    build:
+      context: ./monitoring/grafana
+      dockerfile: Dockerfile.grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    depends_on:
+      - prometheus

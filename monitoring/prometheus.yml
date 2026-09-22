@@ -1,0 +1,8 @@
+# Prometheus scrape config. Scrapes Bouncer's /metrics over the Compose network.
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: bouncer
+    static_configs:
+      - targets: ["bouncer:3000"] # metrics_path defaults to /metrics

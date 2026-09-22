@@ -12,6 +12,7 @@
     "ci:local": "bash scripts/ci-local.sh"
   },
   "dependencies": {
+    "@prometheus-io/client": "^0.16.1",
     "amqplib": "^2.0.1",
     "express": "^4.19.2",
     "redis": "^6.2.1"

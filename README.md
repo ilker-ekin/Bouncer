@@ -14,7 +14,7 @@ An API gateway that sits in front of a backend service and:
 > backpressure, and tiered prioritization — cleanly and correctly, with the
 > reasoning behind each decision documented (see [Design notes](#design-notes-the-why)).
 
-**Status:** v1 (Redis rate limiting) ✅ · v2 (RabbitMQ tiered prioritization) ✅ · CI ✅ · CD (AWS) planned.
+**Status:** v1 (Redis rate limiting) ✅ · v2 (RabbitMQ tiered prioritization) ✅ · CI ✅ · Monitoring (Prometheus + Grafana) ✅ · CD (AWS) planned.
 
 ## Table of contents
 
@@ -26,6 +26,7 @@ An API gateway that sits in front of a backend service and:
 - [Tiers](#tiers)
 - [Load test & overload demo](#load-test--overload-demo)
 - [Tests & CI](#tests--ci)
+- [Monitoring](#monitoring)
 - [Configuration](#configuration)
 - [Design notes (the "why")](#design-notes-the-why)
 - [Project structure](#project-structure)
@@ -40,8 +41,9 @@ An API gateway that sits in front of a backend service and:
 - **Reverse proxy** — forwards allowed requests to a backend, with body-size limits, backend timeouts, and hop-by-hop header hygiene.
 - **Tiered prioritization under overload** — requests beyond a concurrency cap are queued in RabbitMQ and drained **T3 → T2 → T1**.
 - **Fail-open** — if Redis is unreachable, requests are allowed rather than dropped (availability over strict enforcement).
-- **Fully containerized** — one `docker compose up` brings up the gateway, Redis, RabbitMQ, and a backend.
+- **Fully containerized** — one `docker compose up` brings up the gateway, Redis, RabbitMQ, a backend, Prometheus, and Grafana.
 - **Integration-tested in CI** — GitHub Actions runs the suite against the real stack on every PR.
+- **Observability** — Prometheus metrics (`/metrics`) + a provisioned Grafana dashboard (request rates, 429s, in-flight, queue depth, p95 latency).
 
 ## How it works
 
@@ -71,6 +73,7 @@ client ─▶ authenticate ─▶ rate limit ─▶ dispatch ─▶ forward ─�
 | Rate limiting | Redis + Lua (`node-redis`) |
 | Prioritization | RabbitMQ (`amqplib`) |
 | Tests | `node:test` (zero-dependency) |
+| Metrics | `@prometheus-io/client` → Prometheus → Grafana |
 | Orchestration | Docker Compose |
 | CI | GitHub Actions |
 
@@ -191,6 +194,43 @@ GitHub Actions — on every pull request targeting `main` (from any branch), on
 pushes to `main`, and on manual dispatch. Enable branch protection requiring the
 `CI` check to gate merges.
 
+## Monitoring
+
+`docker compose up` also starts **Prometheus** and **Grafana**. Bouncer exposes
+metrics at **`/metrics`**; Prometheus scrapes them; Grafana renders a dashboard —
+all provisioned as code (no manual setup).
+
+| Service | URL | Notes |
+|---------|-----|-------|
+| Metrics endpoint | http://localhost:3000/metrics | Prometheus exposition format |
+| Prometheus | http://localhost:9090 | query/debug UI; `/targets` shows scrape health |
+| Grafana | http://localhost:3001/d/bouncer/bouncer | **Bouncer** dashboard (anonymous access, dev-only) |
+
+**Metrics exposed:**
+
+| Metric | Type | Labels |
+|--------|------|--------|
+| `bouncer_requests_total` | counter | `tier`, `outcome` (`forwarded`/`queued`/`rate_limited`/`unauthorized`) |
+| `bouncer_in_flight` | gauge | — |
+| `bouncer_backend_duration_seconds` | histogram | `tier` |
+
+Plus default Node process metrics (CPU, memory, event-loop lag).
+
+**See it move** — open the Grafana dashboard, then in another terminal:
+
+```bash
+npm run demo       # In-flight pins at the cap; Queued spikes for T1+T3; T1 p95 climbs
+npm run loadtest   # the 429/s-by-tier panel lights up
+```
+
+The dashboard shows request rate (by outcome and tier), 429s by tier, live
+in-flight concurrency, queue depth by tier, and **p95 backend latency by tier** —
+which visually demonstrates the tier prioritization (T3 stays fast; T1 degrades
+because it's served last under overload).
+
+> `/metrics` and Grafana are unauthenticated here for convenience; in production
+> you'd restrict `/metrics` to the internal network and secure Grafana.
+
 ## Configuration
 
 | Variable        | Default                                 | Purpose                                              |
@@ -273,6 +313,7 @@ src/
   queue.ts      RabbitMQ topology: direct exchange + per-tier queues
   dispatch.ts   fork: forward directly, or enqueue + priority consumer
   forward.ts    proxy a request to the backend
+  metrics.ts    Prometheus metrics (registry, counters, gauge, histogram)
 scripts/
   loadtest.ts       concurrent per-tier burst (rate-limit proof)
   demo-overload.ts  overload/priority demo (T3 served before T1)
@@ -282,6 +323,10 @@ tests/
   ratelimit.test.ts    Redis rate limiting (429 + headers)
   overload.test.ts     RabbitMQ overload priority (T3 before T1)
   helpers.ts           shared test helpers
+monitoring/
+  prometheus.yml            Prometheus scrape config
+  Dockerfile.prometheus     bakes the scrape config into the image
+  grafana/                  provisioned datasource + Bouncer dashboard (as code)
 .github/workflows/
   ci.yml            GitHub Actions: boot stack, run tests, tear down
 ```
@@ -291,8 +336,8 @@ tests/
 - [x] **v1 — Redis rate limiting** (token bucket, atomic Lua, fail-open)
 - [x] **v2 — RabbitMQ tiered prioritization** (overload detection, publish, priority consumer)
 - [x] **CI** — GitHub Actions integration tests (Redis + RabbitMQ)
+- [x] **Monitoring** — `/metrics` + Prometheus + a provisioned Grafana dashboard
 - [ ] **CD** — deploy to AWS
-- [ ] **v3 (candidate)** — `/metrics` endpoint + Prometheus/Grafana observability
 
 ## Scope
 
