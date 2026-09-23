@@ -20,10 +20,18 @@ const SKIP_REQUEST_HEADERS = new Set([
   "transfer-encoding",
   "authorization",
 ]);
-// Hop-by-hop headers we don't relay back from the backend either.
+// Headers we never relay back from the backend:
+// - hop-by-hop headers (meaningful only for a single connection)
+// - content-encoding: fetch has already decompressed the body, so relaying the
+//   backend's encoding would label plain bytes as gzip/br and the client would
+//   fail to decode them (browsers: ERR_CONTENT_DECODING_FAILED)
+// - content-length: the decoded body has a different length; res.send sets the
+//   correct one from the buffer it writes
 const SKIP_RESPONSE_HEADERS = new Set([
   "connection",
   "transfer-encoding",
+  "content-encoding",
+  "content-length",
 ]);
 
 class PayloadTooLargeError extends Error {}

@@ -7,6 +7,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Least privilege: the workflow only reads the repo (it publishes nothing).
+# Explicit here so it stays read-only regardless of the repo default, which
+# matters once the repo is public and forks can trigger it.
+permissions:
+  contents: read
+
 jobs:
   integration:
     name: Integration tests (Redis + RabbitMQ)
