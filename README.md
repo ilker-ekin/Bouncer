@@ -40,6 +40,7 @@ An API gateway that sits in front of a backend service and:
 - **API-key auth** — identity + tier resolved server-side; never client-declared.
 - **Reverse proxy** — forwards allowed requests to a backend, with body-size limits, backend timeouts, and hop-by-hop header hygiene.
 - **Tiered prioritization under overload** — requests beyond a concurrency cap are queued in RabbitMQ and drained **T3 → T2 → T1**.
+- **Load shedding** — bounded per-tier queues and a max queue wait; excess overload traffic gets a fast `503` + `Retry-After`.
 - **Fail-open** — if Redis is unreachable, requests are allowed rather than dropped (availability over strict enforcement).
 - **Fully containerized** — one `docker compose up` brings up the gateway, Redis, RabbitMQ, a backend, Prometheus, and Grafana.
 - **Integration-tested in CI** — GitHub Actions runs the suite against the real stack on every PR.
@@ -63,6 +64,7 @@ client ─▶ authenticate ─▶ rate limit ─▶ dispatch ─▶ forward ─�
 2. **rate limit** — a per-tenant [token bucket](#why-a-token-bucket) evaluated atomically in Redis. Under the limit → continue; empty bucket → `429` (with `Retry-After` + `X-RateLimit-*`).
 3. **dispatch** — if the backend has capacity, **forward** directly; if it's [overloaded](#why-in-flight-count-for-overload), **enqueue** by tier and hold the connection open.
 4. **worker** — drains the tier queues in priority order and forwards each held request, answering the waiting client.
+5. **load shedding** — a tier's queue is bounded (`MAX_QUEUE_LENGTH`), and a held request waits at most `MAX_QUEUE_WAIT_MS`; either limit answers `503` + `Retry-After` instead of holding the connection indefinitely.
 
 ## Tech stack
 
@@ -175,11 +177,14 @@ Every T3 finished before any T1 (`T3 max 4114 < T1 min 4116`).
 ## Tests & CI
 
 Integration tests (`node:test`, zero-dependency) run against the live stack —
-health, auth, Redis rate limiting, and RabbitMQ overload priority:
+health, auth, Redis rate limiting, RabbitMQ overload priority, and load
+shedding (queue full / wait timeout → `503`). The tests layer
+[`docker-compose.test.yml`](docker-compose.test.yml) on top of the base stack
+(a tiny T2 queue, so "queue full" takes a handful of requests):
 
 ```bash
-docker compose up -d --build   # start the stack
-npm test                       # run the suite against it
+docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build
+npm test
 ```
 
 Or run the whole pipeline (boot → wait for `/health` → test → tear down) in one
@@ -210,9 +215,13 @@ all provisioned as code (no manual setup).
 
 | Metric | Type | Labels |
 |--------|------|--------|
-| `bouncer_requests_total` | counter | `tier`, `outcome` (`forwarded`/`queued`/`rate_limited`/`unauthorized`) |
+| `bouncer_requests_total` | counter | `tier`, `outcome` (`forwarded`/`queued`/`rate_limited`/`unauthorized`/`shed`) |
 | `bouncer_in_flight` | gauge | — |
 | `bouncer_backend_duration_seconds` | histogram | `tier` |
+
+`shed` counts every load-shedding `503` (queue full, or wait timeout). A request
+that waited and then timed out was already counted as `queued`, so it appears
+under both.
 
 Plus default Node process metrics (CPU, memory, event-loop lag).
 
@@ -224,7 +233,7 @@ npm run loadtest   # the 429/s-by-tier panel lights up
 ```
 
 The dashboard shows request rate (by outcome and tier), 429s by tier, live
-in-flight concurrency, queue depth by tier, and **p95 backend latency by tier** —
+in-flight concurrency, queued and shed rates by tier, and **p95 backend latency by tier** —
 which visually demonstrates the tier prioritization (T3 stays fast; T1 degrades
 because it's served last under overload).
 
@@ -240,6 +249,9 @@ because it's served last under overload).
 | `BACKEND_URL`   | `http://localhost:8080`                 | Backend to proxy allowed traffic to                  |
 | `RABBITMQ_URL`  | `amqp://bouncer:bouncer@localhost:5672` | RabbitMQ address                                     |
 | `MAX_IN_FLIGHT` | `50`                                    | Concurrent backend requests before overload (queuing) |
+| `MAX_QUEUE_LENGTH` | `1000`                               | Max requests waiting per tier; beyond it → `503` (`queue_full`) |
+| `MAX_QUEUE_LENGTH_T1/T2/T3` | `MAX_QUEUE_LENGTH`          | Per-tier override of the above                       |
+| `MAX_QUEUE_WAIT_MS` | `5000`                              | Max time a request waits in the queue; then → `503` (`queue_timeout`) |
 
 Compose sets these to the service network addresses (and `MAX_IN_FLIGHT=10`). The
 RabbitMQ credentials are throwaway **dev** values — production credentials would
@@ -316,6 +328,28 @@ looks up the entry, forwards, and writes the response to the held `res`. No
 serialization (single process). Scaling path: a reply-queue RPC pattern so any
 instance can serve the reply.
 
+### Why shed load (and why the bound is in-process)
+
+A queue only helps if it drains before clients give up. Every held request is an
+open socket plus its `req`/`res` objects. Without limits, sustained overload
+grows memory and latency until everything fails at once. Two limits turn that
+into fast, explicit `503`s with `Retry-After`:
+
+- **`MAX_QUEUE_LENGTH` per tier.** A full tier queue rejects new overload
+  traffic at admission, so the rejection is fast.
+- **`MAX_QUEUE_WAIT_MS`.** A held request not dequeued in time gets `503`
+  and is removed from the map. Its id stays in RabbitMQ; when the consumer
+  reaches it, it finds no entry, acks and skips it without using a backend slot.
+
+The length bound is an **in-process counter** of live waiters, not RabbitMQ's
+`x-max-length` + `reject-publish`. The broker would count ids for requests that
+already timed out or disconnected until the consumer drained them, so the
+bound would drift from what's actually held in memory. It would also need a
+publisher-confirm round trip per enqueue. The correlation map already makes
+this single-instance, so a local count is exact and costs nothing.
+Each request leaves the queue exactly once (served, timed out, or client gone),
+and its slot is released at that moment.
+
 ## Project structure
 
 ```
@@ -326,7 +360,7 @@ src/
   ratelimit.ts  token-bucket Lua script + rate-limit middleware
   overload.ts   in-flight counter + MAX_IN_FLIGHT cap (overload detection)
   queue.ts      RabbitMQ topology: direct exchange + per-tier queues
-  dispatch.ts   fork: forward directly, or enqueue + priority consumer
+  dispatch.ts   fork: forward directly, or enqueue (bounded, timed) + priority consumer
   forward.ts    proxy a request to the backend
   metrics.ts    Prometheus metrics (registry, counters, gauge, histogram)
 scripts/
@@ -337,6 +371,7 @@ tests/
   integration.test.ts  health + auth
   ratelimit.test.ts    Redis rate limiting (429 + headers)
   overload.test.ts     RabbitMQ overload priority (T3 before T1)
+  loadshed.test.ts     queue full / wait timeout -> 503
   helpers.ts           shared test helpers
 monitoring/
   prometheus.yml            Prometheus scrape config

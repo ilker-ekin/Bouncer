@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+# Base stack + test overrides (see docker-compose.test.yml).
+env:
+  COMPOSE_FILE: docker-compose.yml:docker-compose.test.yml
+
 jobs:
   integration:
     name: Integration tests (Redis + RabbitMQ)
