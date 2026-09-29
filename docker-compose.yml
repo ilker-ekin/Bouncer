@@ -15,8 +15,10 @@ services:
       - RABBITMQ_DEFAULT_USER=bouncer
       - RABBITMQ_DEFAULT_PASS=bouncer
     # Bouncer connects on startup and fails fast, so wait until RabbitMQ is ready.
+    # `ping` passes once the node is up, which can be before the AMQP listener
+    # binds 5672; check_port_connectivity waits for the listeners themselves.
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 5s
       timeout: 5s
       retries: 12
