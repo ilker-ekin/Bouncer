@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Run the CI pipeline locally, mirroring .github/workflows/ci.yml:
-# boot the stack, wait for readiness, run the integration tests, tear down.
+# typecheck, build the image, boot the stack, wait for readiness, run the
+# integration tests, tear down.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -9,6 +10,12 @@ COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.test.yml)
 
 teardown() { echo "==> docker compose down -v"; "${COMPOSE[@]}" down -v >/dev/null 2>&1 || true; }
 trap teardown EXIT
+
+echo "==> tsc --noEmit"
+npx tsc --noEmit
+
+echo "==> docker build"
+docker build -q -t bouncer:ci . >/dev/null
 
 echo "==> docker compose up -d --build (with test overrides)"
 "${COMPOSE[@]}" up -d --build

@@ -32,6 +32,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Fail fast on type errors (src, scripts, tests) before booting anything.
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # Build the production image on its own so a broken Dockerfile or build
+      # step fails as such, not as "Bouncer did not become ready". Compose then
+      # reuses the cached layers.
+      - name: Build production image
+        run: docker build -t bouncer:ci .
+
       - name: Start the stack (Bouncer + Redis + RabbitMQ + backend)
         run: docker compose up -d --build
 
