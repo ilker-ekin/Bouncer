@@ -2,7 +2,7 @@ import express from "express";
 import { createClient } from "redis";
 import { connect } from "amqplib";
 import { authenticate } from "./auth.js";
-import { rateLimit } from "./ratelimit.js";
+import { rateLimit, tokenBucket } from "./ratelimit.js";
 import { declareTopology } from "./queue.js";
 import { createDispatch, startConsumer } from "./dispatch.js";
 import { registry } from "./metrics.js";
@@ -12,9 +12,11 @@ import { registry } from "./metrics.js";
 // disableOfflineQueue: reject commands immediately when disconnected instead of
 // queuing them, so the rate limiter fails open fast (see ratelimit.ts) rather
 // than hanging ~5s waiting for a reconnect.
+// scripts: registers the token-bucket Lua script as redis.tokenBucket (EVALSHA).
 const redis = createClient({
   url: process.env.REDIS_URL,
   disableOfflineQueue: true,
+  scripts: { tokenBucket },
 });
 
 // node-redis emits 'error' on connection trouble (drops, reconnect failures).

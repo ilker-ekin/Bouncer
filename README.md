@@ -266,6 +266,21 @@ different clients. Running the whole read-compute-write as a single
 race, and one round-trip. Key: a hash `ratelimit:<tenantId>` with fields `tokens`
 + `ts`, TTL `capacity / rate` so idle tenants self-clean.
 
+**The clock is Redis's, not the gateway's.** The script reads `now` with
+`redis.call('TIME')` instead of taking `Date.now()` as an argument. Refill math
+is `elapsed = now - ts`, so if two gateway hosts disagree about the time, a
+request from the "behind" host sees negative elapsed (clamped to 0, so no
+refill), and one from the "ahead" host mints tokens that were never earned.
+With one clock that can't happen, whatever the gateway hosts' clocks say.
+(Writing after `TIME` is allowed because Redis ≥ 5 replicates a script's
+effects rather than re-running it on replicas.)
+
+**The script is registered once, then called by hash.** It's defined with
+node-redis `defineScript` and registered on the client, so each call is
+`EVALSHA <sha1>` rather than resending the source. On `NOSCRIPT` (first call,
+Redis restart, `SCRIPT FLUSH`) the client falls back to `EVAL` once, which also
+re-caches it.
+
 ### Why fail open
 
 If Redis becomes unreachable, the limiter **allows** requests rather than
