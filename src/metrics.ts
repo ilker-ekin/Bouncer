@@ -5,8 +5,8 @@ import {
   Histogram,
   collectDefaultMetrics,
 } from "@prometheus-io/client";
-import { inFlight } from "./overload";
-import type { Tier } from "./config";
+import { inFlight } from "./overload.js";
+import type { Tier } from "./config.js";
 
 export const registry = new Registry();
 

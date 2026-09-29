@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
 import type { Channel, GetMessage } from "amqplib";
-import { forward } from "./forward";
-import { enter, isOverloaded, leave } from "./overload";
-import { EXCHANGE, QUEUES } from "./queue";
-import type { Tier } from "./config";
-import { recordRequest } from "./metrics";
+import { forward } from "./forward.js";
+import { enter, isOverloaded, leave } from "./overload.js";
+import { EXCHANGE, QUEUES } from "./queue.js";
+import type { Tier } from "./config.js";
+import { recordRequest } from "./metrics.js";
 
 // Requests waiting in the priority queue, keyed by a generated message id.
 // The consumer (next step) looks up the held { req, res } by this id to forward

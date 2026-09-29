@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
-import { API_KEYS, type Tenant } from "./config";
-import { recordRequest } from "./metrics";
+import { API_KEYS, type Tenant } from "./config.js";
+import { recordRequest } from "./metrics.js";
 
 // Make the resolved tenant available to later handlers in a type-safe way.
 declare global {

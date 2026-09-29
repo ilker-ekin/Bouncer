@@ -68,7 +68,7 @@ client ─▶ authenticate ─▶ rate limit ─▶ dispatch ─▶ forward ─�
 
 | Concern | Choice |
 |---------|--------|
-| Language / runtime | TypeScript (strict), run via `tsx` on Node 22 |
+| Language / runtime | TypeScript (strict) on Node 22 — `tsx` in dev, compiled with `tsc` to `dist/` for the image |
 | HTTP | Express |
 | Rate limiting | Redis + Lua (`node-redis`) |
 | Prioritization | RabbitMQ (`amqplib`) |

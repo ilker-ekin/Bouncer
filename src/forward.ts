@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { startBackendTimer } from "./metrics";
+import { startBackendTimer } from "./metrics.js";
 
 // Where allowed requests get proxied. Defaults to the local whoami (host port);
 // Docker Compose overrides this with the backend service address.

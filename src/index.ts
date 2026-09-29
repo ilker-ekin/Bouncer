@@ -1,11 +1,11 @@
 import express from "express";
 import { createClient } from "redis";
 import { connect } from "amqplib";
-import { authenticate } from "./auth";
-import { rateLimit } from "./ratelimit";
-import { declareTopology } from "./queue";
-import { createDispatch, startConsumer } from "./dispatch";
-import { registry } from "./metrics";
+import { authenticate } from "./auth.js";
+import { rateLimit } from "./ratelimit.js";
+import { declareTopology } from "./queue.js";
+import { createDispatch, startConsumer } from "./dispatch.js";
+import { registry } from "./metrics.js";
 
 // One long-lived Redis connection, reused for every request (not per-request).
 // URL comes from env: Docker sets redis://redis:6379; defaults to localhost otherwise.

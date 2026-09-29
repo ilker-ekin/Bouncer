@@ -1,5 +1,5 @@
 import type { Channel } from "amqplib";
-import type { Tier } from "./config";
+import type { Tier } from "./config.js";
 
 // Direct exchange: routes each message to the queue whose binding key exactly
 // matches the message's routing key (the tier).

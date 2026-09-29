@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import type { RedisClientType } from "redis";
-import { TIER_LIMITS } from "./config";
-import { recordRequest } from "./metrics";
+import { TIER_LIMITS } from "./config.js";
+import { recordRequest } from "./metrics.js";
 
 // Token-bucket check, run atomically inside Redis so concurrent requests can't
 // race past the limit (read-compute-write is one indivisible unit).
