@@ -1,0 +1,13 @@
+# Keep the build context small and free of local-only files: the Dockerfile
+# copies only package*.json, tsconfig*.json and src/.
+node_modules
+dist
+.git
+.github
+.claude
+CLAUDE
+*.md
+.env*
+monitoring
+scripts
+tests

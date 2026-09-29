@@ -1,0 +1,15 @@
+{
+  // Production build: compile src/ to dist/ for plain `node` (no tsx at runtime).
+  // NodeNext matches how Node itself resolves ESM, so tsc rejects any import
+  // Node couldn't load (e.g. a relative import missing its .js extension).
+  // tsconfig.json stays the dev/typecheck config for src + scripts + tests.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"]
+}

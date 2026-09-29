@@ -109,6 +109,22 @@
           "legendFormat": "p95 {{tier}}"
         }
       ]
+    },
+    {
+      "id": 7,
+      "title": "Shed (503/s) by tier — queue full or wait timeout",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (tier) (rate(bouncer_requests_total{outcome=\"shed\"}[1m]))",
+          "legendFormat": "{{tier}}"
+        }
+      ]
     }
   ]
 }

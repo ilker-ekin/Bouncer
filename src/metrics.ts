@@ -5,16 +5,24 @@ import {
   Histogram,
   collectDefaultMetrics,
 } from "@prometheus-io/client";
-import { inFlight } from "./overload";
-import type { Tier } from "./config";
+import { inFlight } from "./overload.js";
+import type { Tier } from "./config.js";
 
 export const registry = new Registry();
 
 // Node process metrics (CPU, memory, event-loop lag) — free from the library.
 collectDefaultMetrics({ register: registry });
 
-// What the gateway decided for a request (mutually exclusive, one per request).
-export type Outcome = "forwarded" | "queued" | "rate_limited" | "unauthorized";
+// What the gateway decided for a request. One per request, with one exception:
+// "queued" is not final. A queued request is later either served (not counted
+// again) or shed after waiting MAX_QUEUE_WAIT_MS, which counts it as "shed"
+// too. So "shed" = every 503 from load shedding (queue full + wait timeout).
+export type Outcome =
+  | "forwarded"
+  | "queued"
+  | "rate_limited"
+  | "unauthorized"
+  | "shed";
 
 // Total requests by tier and outcome. Graph its rate for traffic mix / 429 rate.
 const requestsTotal = new Counter({
